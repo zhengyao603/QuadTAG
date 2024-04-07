@@ -52,7 +52,7 @@ class T5FineTuner(nn.Module):
         sent_num = (sent_token_masks.sum(-1) != 0).sum(-1)
 
         truncated_dim = sent_num[0]
-        table_logits = self.biaf_layer(updated_sent_embeds, updated_sent_embeds, sent_num[0])
+        table_logits = self.biaffine_layer(updated_sent_embeds, updated_sent_embeds, sent_num[0])
 
         logits_flatten = table_logits.reshape(-1, table_logits.size()[-1])
         tags_flatten = batch['tags'][:, :truncated_dim, :truncated_dim].reshape(-1, 1)
@@ -184,7 +184,7 @@ def transform_doc_tokens_to_sent_tokens(hidden_states, sent_mask, max_sent_num, 
 if __name__ == "__main__":
     args = init_args()
     tokenizer = T5Tokenizer.from_pretrained(args.model_name_or_path)
-    tfm_model = T5ForConditionalGeneration.from_pretrained(args.output_dir)
+    tfm_model = T5ForConditionalGeneration.from_pretrained(args.model_name_or_path)
 
     model = T5FineTuner(args, tfm_model, tokenizer)
     train_dataset = QAMDataset(T5Tokenizer.from_pretrained("t5-base"), "QAM", "train", 2496)
