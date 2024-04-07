@@ -187,7 +187,7 @@ def transform_doc_tokens_to_sent_tokens(hidden_states, sent_mask, max_sent_num, 
 
 
 def evaluate(data_loader, model, mode=''):
-    device = torch.device(f'cuda:{args.n_gpu}')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     model.model.eval()
 
