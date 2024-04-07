@@ -3,6 +3,7 @@ import os
 import torch
 import torch.nn as nn
 import numpy as np
+import json
 
 from torch.nn import functional
 from torch.utils.data import DataLoader
@@ -10,6 +11,7 @@ from transformers import T5Tokenizer, T5ForConditionalGeneration
 from transformers import AdamW, get_linear_schedule_with_warmup
 from modules import Biaffine
 from data_preprocess import QAMDataset
+from tqdm import tqdm
 
 
 class T5FineTuner(nn.Module):
@@ -79,22 +81,25 @@ class T5FineTuner(nn.Module):
         return loss
 
 
-def train(model, train_dataloader, val_dataloader, num_epochs, learning_rate, weight_decay, warmup_steps):
+def train(model, train_dataloader, val_dataloader, args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
+    # configure optimizer and scheduler
     optimizer_grouped_parameters = [
         {"params": [p for n, p in model.named_parameters() if not any(nd in n for nd in ["bias", "LayerNorm.weight"])],
-         "weight_decay": weight_decay},
+         "weight_decay": args.weight_decay},
         {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in ["bias", "LayerNorm.weight"])],
          "weight_decay": 0.0}
     ]
+    optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
+    t_total = ((len(train_dataloader.dataset) // (args.train_batch_size * max(1, args.n_gpu)))
+               // args.gradient_accumulation_steps
+               * float(args.num_train_epochs))
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total)
 
-    optimizer = AdamW(optimizer_grouped_parameters, lr=learning_rate)
-    t_total = len(train_dataloader) * num_epochs
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=t_total)
-
-    for epoch in range(num_epochs):
+    # training step
+    for epoch in range(args.num_train_epochs):
         model.train()
         for batch in train_dataloader:
             optimizer.zero_grad()
@@ -103,13 +108,13 @@ def train(model, train_dataloader, val_dataloader, num_epochs, learning_rate, we
             optimizer.step()
             scheduler.step()
 
-        model.eval()
+        # model.eval()
         val_loss = 0
         with torch.no_grad():
             for batch in val_dataloader:
                 val_loss += model._step(batch).item()
         val_loss /= len(val_dataloader)
-        print(f"Epoch {epoch+1}/{num_epochs}, Val Loss: {val_loss:.4f}")
+        print(f"Epoch {epoch+1}/{args.num_train_epochs}, Val Loss: {val_loss:.4f}")
 
     return model
 
@@ -181,21 +186,128 @@ def transform_doc_tokens_to_sent_tokens(hidden_states, sent_mask, max_sent_num, 
     return sent_embeds, sent_attn_masks
 
 
+def evaluate(data_loader, model, mode=''):
+    device = torch.device(f'cuda:{args.n_gpu}')
+    model.to(device)
+    model.model.eval()
+
+    outputs, targets = [], []
+    for batch in tqdm(data_loader):
+        outs = model.model.generate(input_ids=batch['source_ids'].to(device),
+                                    attention_mask=batch['source_mask'].to(device),
+                                    max_length=args.max_generate_len,
+                                    )
+
+        dec = [tokenizer.decode(ids, skip_special_tokens=True) for ids in outs]
+        target = [tokenizer.decode(ids, skip_special_tokens=True) for ids in batch["target_ids"]]
+        outputs.extend(dec)
+        targets.extend(target)
+
+    # return scores
+    print("saving generation results...")
+    with open(f"./results/{mode}[pred]{args.output_dir.split('/')[-1]}.txt", 'w') as fw:
+        json.dump(outputs, fw)
+    with open(f"./results/{mode}[gold]{args.output_dir.split('/')[-1]}.txt", 'w') as fw:
+        json.dump(targets, fw)
+
+
 if __name__ == "__main__":
+    # arguments initialization
     args = init_args()
+    print("\n", "=" * 30, f"NEW EXP on {args.dataset}", "=" * 30, "\n")
+
+    # tokenizer initialization
     tokenizer = T5Tokenizer.from_pretrained(args.model_name_or_path)
-    tfm_model = T5ForConditionalGeneration.from_pretrained(args.model_name_or_path)
+    special_tokens = ['<SS>', '<SE>', '[SEP]']
+    tokenizer.add_tokens(special_tokens)
 
-    model = T5FineTuner(args, tfm_model, tokenizer)
-    train_dataset = QAMDataset(T5Tokenizer.from_pretrained("t5-base"), "QAM", "train", 2496)
-    val_dataset = QAMDataset(T5Tokenizer.from_pretrained("t5-base"), "QAM", "dev", 2496)
-    train_dataloader = DataLoader(train_dataset, batch_size=args.train_batch_size, shuffle=True)
-    val_dataloader = DataLoader(val_dataset, batch_size=args.eval_batch_size)
+    # example
+    print(f"\nHere is an example (from the dev set):")
+    dataset = QAMDataset(tokenizer=tokenizer, data_dir=args.dataset, data_type='dev', max_len=args.max_seq_length)
+    data_sample = dataset[7]
+    example_input = tokenizer.decode(data_sample['source_ids'], skip_special_tokens=True)
+    example_output = tokenizer.decode(data_sample['target_ids'], skip_special_tokens=True)
+    print('\n-> Input :', example_input)
+    print('')
+    print('-> Output:', example_output)
+    print('')
+    print('-> dataset:  ', args.dataset)
 
-    num_epochs = 10
-    learning_rate = 2e-5
-    weight_decay = 0.01
-    warmup_steps = 1000
+    # example
+    if args.do_train:
+        with open(f"./io_example/[example]{args.output_dir.split('/')[-1]}.txt", 'w') as fw:
+            fw.write(example_input + '\n')
+            fw.write(example_output + '\n')
+            fw.write("\t".join(special_tokens))
+    print('\n')
+    print("output model dir", args.output_dir)
 
-    trained_model = train(model, train_dataloader, val_dataloader, num_epochs, learning_rate, weight_decay,
-                          warmup_steps)
+    # training
+    if args.do_train:
+        torch.manual_seed(args.seed)
+        print("\n****** Conduct Training ******")
+        # initialize the T5 model
+        tfm_model = T5ForConditionalGeneration.from_pretrained(args.model_name_or_path)
+        model = T5FineTuner(args, tfm_model, tokenizer)
+        model.model.resize_token_embeddings(len(tokenizer))
+
+        # initialize dataloader
+        train_dataset = QAMDataset(tokenizer, "QAM", "train", args.max_seq_length)
+        val_dataset = QAMDataset(tokenizer, "QAM", "dev", args.max_seq_length)
+        train_dataloader = DataLoader(train_dataset, batch_size=args.train_batch_size, shuffle=True)
+        val_dataloader = DataLoader(val_dataset, batch_size=args.eval_batch_size)
+
+        # train model
+        trained_model = train(model, train_dataloader, val_dataloader, args)
+
+        # save the final model
+        model.model.save_pretrained(args.output_dir)
+        tokenizer.save_pretrained(args.output_dir)
+        print("Finish training and saving the model!", args.output_dir)
+        torch.save(model.state_dict(), f'{args.output_dir}/model.pt')
+
+    # evaluation
+    if args.do_test:
+        print("\n****** Conduct Evaluating with the last state ******")
+
+        print(f"Load trained model from {args.output_dir}")
+        print('Note that a pretrained model is required and `do_true` should be False')
+
+        tokenizer = T5Tokenizer.from_pretrained(args.output_dir)
+        tfm_model = T5ForConditionalGeneration.from_pretrained(args.output_dir)
+
+        model = T5FineTuner(args, tfm_model, tokenizer)
+        print("Reload other model paramters")
+        model.load_state_dict(torch.load(f'{args.output_dir}/model.pt'))
+
+        print("Reload pretrained model")
+        model.model.from_pretrained(args.output_dir)
+        model.tokenizer.from_pretrained(args.output_dir)
+
+        test_dataset = QAMDataset(tokenizer, data_dir=args.dataset, data_type='test', max_len=args.max_seq_length)
+        test_loader = DataLoader(test_dataset, batch_size=args.eval_batch_size, num_workers=args.num_workers, shuffle=False)
+
+        scores = evaluate(test_loader, model)
+
+    # evaluation
+    if args.do_dev:
+        print("\n****** Conduct Evaluating with the last state ******")
+
+        print(f"Load trained model from {args.output_dir}")
+        print('Note that a pretrained model is required and `do_true` should be False')
+
+        tokenizer = T5Tokenizer.from_pretrained(args.output_dir)
+        tfm_model = T5ForConditionalGeneration.from_pretrained(args.output_dir)
+
+        model = T5FineTuner(args, tfm_model, tokenizer)
+        print("Reload other model paramters")
+        model.load_state_dict(torch.load(f'{args.output_dir}/model.pt'))
+
+        print("Reload pretrained model")
+        model.model.from_pretrained(args.output_dir)
+        model.tokenizer.from_pretrained(args.output_dir)
+
+        test_dataset = QAMDataset(tokenizer, data_dir=args.dataset, data_type='dev', max_len=args.max_seq_length)
+        test_loader = DataLoader(test_dataset, batch_size=args.eval_batch_size, num_workers=args.num_workers, shuffle=False)
+
+        scores = evaluate(test_loader, model, 'dev')
