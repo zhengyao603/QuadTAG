@@ -277,7 +277,7 @@ if __name__ == "__main__":
         tfm_model = T5ForConditionalGeneration.from_pretrained(args.output_dir)
 
         model = T5FineTuner(args, tfm_model, tokenizer)
-        print("Reload other model paramters")
+        print("Reload other model parameters")
         model.load_state_dict(torch.load(f'{args.output_dir}/model.pt'))
 
         print("Reload pretrained model")
@@ -300,7 +300,7 @@ if __name__ == "__main__":
         tfm_model = T5ForConditionalGeneration.from_pretrained(args.output_dir)
 
         model = T5FineTuner(args, tfm_model, tokenizer)
-        print("Reload other model paramters")
+        print("Reload other model parameters")
         model.load_state_dict(torch.load(f'{args.output_dir}/model.pt'))
 
         print("Reload pretrained model")
