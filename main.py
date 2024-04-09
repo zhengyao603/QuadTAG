@@ -34,15 +34,15 @@ class T5FineTuner(nn.Module):
             output_hidden_states=output_hidden_states,
         )
 
-    def _step(self, batch):
+    def _step(self, batch, device):
         lm_labels = batch["target_ids"]
         lm_labels[lm_labels[:, :] == self.tokenizer.pad_token_id] = -100
 
         outputs = self(
-            input_ids=batch["source_ids"],
-            attention_mask=batch["source_mask"],
-            labels=lm_labels,
-            decoder_attention_mask=batch['target_mask'],
+            input_ids=batch["source_ids"].to(device),
+            attention_mask=batch["source_mask"].to(device),
+            labels=lm_labels.to(device),
+            decoder_attention_mask=batch['target_mask'].to(device),
             output_hidden_states=True,
         )
         last_hidden_states = outputs.encoder_hidden_states[-1]
@@ -57,7 +57,7 @@ class T5FineTuner(nn.Module):
         table_logits = self.biaffine_layer(updated_sent_embeds, updated_sent_embeds, sent_num[0])
 
         logits_flatten = table_logits.reshape(-1, table_logits.size()[-1])
-        tags_flatten = batch['tags'][:, :truncated_dim, :truncated_dim].reshape(-1, 1)
+        tags_flatten = batch['tags'][:, :truncated_dim, :truncated_dim].reshape(-1, 1).to(device)
 
         assert (tags_flatten == -1).sum() == 0
 
@@ -100,10 +100,11 @@ def train(model, train_dataloader, val_dataloader, args):
 
     # training step
     for epoch in range(args.num_train_epochs):
+        print(f"Epoch {epoch}")
         model.train()
         for batch in train_dataloader:
             optimizer.zero_grad()
-            loss = model._step(batch)
+            loss = model._step(batch, device)
             loss.backward()
             optimizer.step()
             scheduler.step()
