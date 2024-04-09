@@ -113,7 +113,7 @@ def train(model, train_dataloader, val_dataloader, args):
         val_loss = 0
         with torch.no_grad():
             for batch in val_dataloader:
-                val_loss += model._step(batch).item()
+                val_loss += model._step(batch, device).item()
         val_loss /= len(val_dataloader)
         print(f"Epoch {epoch+1}/{args.num_train_epochs}, Val Loss: {val_loss:.4f}")
 
