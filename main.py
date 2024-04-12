@@ -109,7 +109,7 @@ def train(model, train_dataloader, val_dataloader, args):
             optimizer.step()
             scheduler.step()
 
-        # model.eval()
+        model.eval()
         val_loss = 0
         with torch.no_grad():
             for batch in val_dataloader:
