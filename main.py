@@ -109,6 +109,7 @@ def train(model, train_dataloader, val_dataloader, args):
             loss.backward()
             optimizer.step()
             scheduler.step()
+        train_loss /= len(train_dataloader)
         print(f"Epoch {epoch+1}/{args.num_train_epochs}, Training Loss: {train_loss:.4f}")
 
         model.eval()
