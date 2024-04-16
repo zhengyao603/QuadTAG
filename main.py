@@ -100,14 +100,16 @@ def train(model, train_dataloader, val_dataloader, args):
 
     # training step
     for epoch in range(args.num_train_epochs):
-        print(f"Epoch {epoch}")
         model.train()
+        train_loss = 0
         for batch in train_dataloader:
             optimizer.zero_grad()
             loss = model._step(batch, device)
+            train_loss += loss.item()
             loss.backward()
             optimizer.step()
             scheduler.step()
+        print(f"Epoch {epoch+1}/{args.num_train_epochs}, Training Loss: {train_loss:.4f}")
 
         model.eval()
         val_loss = 0
