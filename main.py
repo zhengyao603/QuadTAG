@@ -140,7 +140,7 @@ def init_args():
                         help="Batch size per GPU for training.")
     parser.add_argument("--eval_batch_size", default=1, type=int,
                         help="Batch size per GPU for evaluation.")
-    parser.add_argument("--max_seq_length", default=312, type=int)
+    parser.add_argument("--max_seq_length", default=1248, type=int)
     parser.add_argument("--learning_rate", default=1e-4, type=float)
     parser.add_argument("--num_train_epochs", default=10, type=int,
                         help="Total number of training epochs to perform.")
