@@ -100,28 +100,15 @@ def train(model, train_dataloader, val_dataloader, args):
 
     # training step
     for epoch in range(args.num_train_epochs):
-        print(f"Epoch {epoch}")
         model.train()
         train_loss = 0
-        batch_count = 0
         for batch in train_dataloader:
             optimizer.zero_grad()
             loss = model._step(batch, device)
             train_loss += loss.item()
-            print(f"Training Loss: {loss}")
-
             loss.backward()
             optimizer.step()
             scheduler.step()
-
-            if batch_count % 200 == 0:
-                # save the current model for batches
-                model.model.save_pretrained(args.output_dir)
-                tokenizer.save_pretrained(args.output_dir)
-                torch.save(model.state_dict(), f'{args.output_dir}/model.pt')
-                print("Epoch " + str((epoch) + 1) + ": Finish batches and saving the model!", args.output_dir)
-            batch_count += 1
-
         train_loss /= len(train_dataloader)
         print(f"Epoch {epoch+1}/{args.num_train_epochs}, Training Loss: {train_loss:.4f}")
 
@@ -132,12 +119,6 @@ def train(model, train_dataloader, val_dataloader, args):
                 val_loss += model._step(batch, device).item()
         val_loss /= len(val_dataloader)
         print(f"Epoch {epoch+1}/{args.num_train_epochs}, Val Loss: {val_loss:.4f}")
-
-        # save the current model
-        model.model.save_pretrained(args.output_dir)
-        tokenizer.save_pretrained(args.output_dir)
-        torch.save(model.state_dict(), f'{args.output_dir}/model.pt')
-        print("Finish training epoch" + str((epoch) + 1) + " and saving the model!", args.output_dir)
 
     return model
 
@@ -160,7 +141,7 @@ def init_args():
                         help="Batch size per GPU for training.")
     parser.add_argument("--eval_batch_size", default=1, type=int,
                         help="Batch size per GPU for evaluation.")
-    parser.add_argument("--max_seq_length", default=1280, type=int)
+    parser.add_argument("--max_seq_length", default=1248, type=int)
     parser.add_argument("--learning_rate", default=1e-4, type=float)
     parser.add_argument("--num_train_epochs", default=10, type=int,
                         help="Total number of training epochs to perform.")
@@ -273,14 +254,6 @@ if __name__ == "__main__":
         tfm_model = T5ForConditionalGeneration.from_pretrained(args.model_name_or_path)
         model = T5FineTuner(args, tfm_model, tokenizer)
         model.model.resize_token_embeddings(len(tokenizer))
-
-        if args.model_name_or_path != 't5-base':
-            print("Reload other model paramters")
-            model.load_state_dict(torch.load(f'{args.output_dir}/model.pt'))
-
-            print("Reload pretrained model")
-            model.model.from_pretrained(args.output_dir)
-            model.tokenizer.from_pretrained(args.output_dir)
 
         # initialize dataloader
         train_dataset = QAMDataset(tokenizer, "QAM", "train", args.max_seq_length)
