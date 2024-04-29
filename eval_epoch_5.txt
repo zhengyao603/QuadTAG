@@ -1,0 +1,9 @@
+QuadTAG , QAM , None
+[('#12', 'supports the topic', '#15', 'Explanation', 'doc_83'), ('#7', 'supports the topic', '#12', 'Expert', 'doc_91'), ('#13', 'is against the topic', '#14', 'Research', 'doc_260'), ('#13', 'supports the topic', '#15', 'Explanation', 'doc_307'), ('#11', 'is against the topic', '#10', 'Research', 'doc_205')]
+========================
+[('#13', 'is against the topic', '#14', 'Research', 'doc_260'), ('#20', 'is against the topic', '#22', 'Explanation', 'doc_18'), ('#13', 'supports the topic', '#15', 'Explanation', 'doc_307'), ('#12', 'supports the topic', '#13', 'Explanation', 'doc_225'), ('#10', 'is against the topic', '#11', 'Case', 'doc_279')]
+========================
+   Model scores  
+num pred: 2430 num gold: 2347 num correct: 471
+prec: 0.193827, recall: 0.2007, f1: 0.197195
+========================
