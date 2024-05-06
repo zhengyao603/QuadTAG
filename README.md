@@ -22,3 +22,9 @@ You can refer to `main.py` to check the optional arguments.
 
 You can just set `--do_dev` or `--do_test` to evaluate the model on the development dataset or the test dataset respectively.
 
+After you get the predicted results, you can run the below command to calculate the `precision`, `recall` and `F1 score` of the trained model. (Note that we have uploaded the predicted results to the `results` directory.)
+
+```python
+python eval_quad.py
+```
+
